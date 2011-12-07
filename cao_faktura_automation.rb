@@ -52,6 +52,27 @@ module DBConnection extend OptiFlagSet
   
 end
 
+def value_join(array)
+  out = ""
+  
+  array.each do |x|
+    
+    #Stringbereinigung
+    if x.is_a?(String) && !x.include?("()")
+      out +="\'#{x}\'"
+    else
+      out += x.to_s
+    end
+    
+    out +=","
+    
+  end
+  
+  out.chop!
+  
+  return out
+end
+
 
 def auftragsliste(client_connection, verknuepfungsfeld)
 
@@ -101,16 +122,18 @@ end
 
 def insert_posten(client_connection, posten)
   
+  #REC_ID ist primär Key!
+  posten.delete :REC_ID
+  
+  #Loesche leere Daten
+  posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1)  || (value == 0.0)) }
+  
   #Neuer Posten soll JOURNAL_ID von neuem Auftrag haben  
   posten[:JOURNAL_ID] = "LAST_INSERT_ID()"
   
-  #Datum für neuen Posten
-  posten[:ERSTELLT] = "CURDATE()"
-  posten[:RDATUM] = 
-  
   insert_query ="insert into JOURNALPOS
     (#{posten.keys.join(',')})
-    VALUES(#{posten.values.join(',')})
+    VALUES(#{value_join(posten.values)})
     "
    puts "insert_query: #{insert_query}" if DBConnection.flags.d?
    
@@ -123,12 +146,19 @@ def copy_auftrag(client_connection, auftrag)
   #REC_ID ist primär Key!
   auftrag.delete :REC_ID
   
+  #Loesche leere Daten
   auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1)  || (value == 0.0)) }
   
+  auftrag[:ERSTELLT] = "CURDATE()"
+  auftrag[:RDATUM] = "NOW()"
+          
   insert_query ="insert into JOURNAL
     (#{auftrag.keys.join(',')})
-    VALUES(#{auftrag.values.join(',')})
+    VALUES(#{value_join(auftrag.values)})
     "
+    
+    pp auftrag.keys if DBConnection.flags.d?
+    
    puts "insert_query: #{insert_query}" if DBConnection.flags.d?
    
   return client_connection.query(insert_query)  unless DBConnection.flags.dr?
