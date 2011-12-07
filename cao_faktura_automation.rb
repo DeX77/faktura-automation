@@ -7,7 +7,7 @@ require 'optiflag'
 
 module DBConnection extend OptiFlagSet
   
-  flag "d" do
+  flag "db" do
     description "Database name for database connection. No default"
     long_form "database-name"
   end
@@ -34,6 +34,16 @@ module DBConnection extend OptiFlagSet
     description "Name of the userfield for article connection. Defaults to USERFELD_01"
     default "USERFELD_01"
     long_form "userfield-name"
+  end
+  
+  optional_switch_flag "dr" do
+    description "Dryrun. Don't actually write into the db"
+    long_form "dry-run"
+  end
+  
+  optional_switch_flag "d" do
+    description "Debug. Output some Debug infos."
+    long_form "debug"
   end
   
   usage_flag "h","help","?"
@@ -90,31 +100,44 @@ def stuecklisten_artikel(client_connection, zusammengesetzer_artikel, verknuepfu
 end
 
 def insert_posten(client_connection, posten)
+  
+  #Neuer Posten soll JOURNAL_ID von neuem Auftrag haben  
+  posten[:JOURNAL_ID] = "LAST_INSERT_ID()"
+  
+  #Datum für neuen Posten
+  posten[:ERSTELLT] = "CURDATE()"
+  posten[:RDATUM] = 
+  
   insert_query ="insert into JOURNALPOS
     (#{posten.keys.join(',')})
     VALUES(#{posten.values.join(',')})
     "
-   puts "insert_query: #{insert_query}"
+   puts "insert_query: #{insert_query}" if DBConnection.flags.d?
    
-  #result = client_connection.query(insert_query)
+  return client_connection.query(insert_query) unless DBConnection.flags.dr?
+  
 end
 
 def copy_auftrag(client_connection, auftrag)
   
   #REC_ID ist primär Key!
-  auftrag[:REC_ID]
+  auftrag.delete :REC_ID
+  
+  auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1)  || (value == 0.0)) }
   
   insert_query ="insert into JOURNAL
     (#{auftrag.keys.join(',')})
     VALUES(#{auftrag.values.join(',')})
     "
-   puts "insert_query: #{insert_query}"
+   puts "insert_query: #{insert_query}" if DBConnection.flags.d?
    
-  #result = client_connection.query(insert_query)  
+  return client_connection.query(insert_query)  unless DBConnection.flags.dr?
+   
 end
 
 
 def exchange_artikel(listen_artikel, stuecklisten_artikel)
+  
   
   listen_artikel.each do |key, value|
   
@@ -130,11 +153,17 @@ def exchange_artikel(listen_artikel, stuecklisten_artikel)
     #Menge bleibt bestehen!
     next if [:MENGE].include? key
     
-    puts "Aendere #{key} von #{value} in #{stuecklisten_artikel[key]}"
+    puts "Aendere #{key} von #{value} in #{stuecklisten_artikel[key]}" if DBConnection.flags.d?
     
     listen_artikel[key] = stuecklisten_artikel[key]    
     
-  end 
+  end
+  
+  #Aendere die ARTIKEL_ID
+  listen_artikel[:ARTIKEL_ID] = stuecklisten_artikel[:REC_ID]
+  
+  #Aendere die Beschreibung
+  listen_artikel[:BEZEICHNUNG] = stuecklisten_artikel[:LANGNAME]
   
   return listen_artikel
 end
@@ -142,7 +171,7 @@ end
 client = Mysql2::Client.new(
   :host => DBConnection.flags.H,
   :username => DBConnection.flags.u,
-  :database => DBConnection.flags.d,
+  :database => DBConnection.flags.db,
   :password => DBConnection.flags.p  
 )
 
@@ -153,25 +182,30 @@ client.query_options.merge!(:symbolize_keys => true)
 
 auftraege = auftragsliste(client, DBConnection.flags.uf)
 
-puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}"
+puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
 
 
 liste = postenliste(client, auftraege.first)
 
-puts "Anzahl der zu bearbeitenden Posten im 1. Auftrag: #{liste.count}"
+puts "Anzahl der zu bearbeitenden Posten im 1. Auftrag: #{liste.count}" if DBConnection.flags.d?
 
 zusammengesetzer_artikel = zusammengesetzer_artikel(client, liste.first)
 
 stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
 
-puts "stuecklisten_artikel: "
-pp stuecklisten_artikel.first
+if DBConnection.flags.d? 
+  puts "stuecklisten_artikel: " 
+  pp stuecklisten_artikel.first
+end
 
 exchange_artikel = exchange_artikel(liste.first, stuecklisten_artikel.first)
 
-puts "exchange_artikel: "
-pp exchange_artikel
+if DBConnection.flags.d?
+  puts "exchange_artikel: "
+  pp exchange_artikel
+end
 
-insert_posten(client, liste.first)
-insert_auftrag(client, auftraege.first)
+copy_auftrag(client, auftraege.first)
+
+insert_posten(client, exchange_artikel)
 
