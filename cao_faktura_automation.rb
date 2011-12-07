@@ -3,28 +3,44 @@
 require 'rubygems'
 require 'mysql2'
 require 'pp'
-require 'commandline/optionparser'
-include CommandLine
+require 'optiflag'
 
-#Feld fuer die Verknuepfung von fertig zusammengebauten zu Artikeln aus Baugruppen
-VERKNUEPFUNGSFELD = "USERFELD_01"
+module DBConnection extend OptiFlagSet
+  
+  flag "d" do
+    description "Database name for database connection. No default"
+    long_form "database-name"
+  end
+    
+  optional_flag "H" do
+    description "Hostname for database connection. Defaults to localhost"
+    default "localhost"
+    long_form "hostname"
+  end
 
-optionparser = OptionParser.new { |o|
-    o << Option.new(:flag, :names => %w[--help  -h],
-              :opt_description => "Prints this page.")
-    o << Option.new(:names => %w[--hostname -h],
-              :opt_description => "Hostname for database connection.",
-              :arg_description => "db_hostname")
-    o << Option.new(:names => %w[--username -u],
-              :opt_description => "Username for database connection.",
-              :arg_description => "db_username")
-    o << Option.new(:names => %w[--password -p],
-              :opt_description => "Password for database connection.",
-              :arg_description => "db_password")
-    o << Option.new(:names => %w[--database -d],
-              :opt_description => "Database name for database connection.",
-              :arg_description => "db_name")                                
-}
+  optional_flag "u" do
+    description "Username for database connection. Defaults to root"
+    default "root"
+    long_form "username"
+  end
+    
+  optional_flag "p" do
+    description "Password for database connection. Defaults to empty"
+    default ""
+    long_form "password"
+  end
+  
+  optional_flag "uf" do
+    description "Name of the userfield for article connection. Defaults to USERFELD_01"
+    default "USERFELD_01"
+    long_form "userfield-name"
+  end
+  
+  usage_flag "h","help","?"
+
+  and_process!
+  
+end
 
 
 def auftragsliste(client_connection, verknuepfungsfeld)
@@ -123,15 +139,11 @@ def exchange_artikel(listen_artikel, stuecklisten_artikel)
   return listen_artikel
 end
 
-
-puts optionparser.to_s
-
-
 client = Mysql2::Client.new(
-  :host => optionparser["-h"],
-  :username => optionparser["-u"],
-  :database => optionparser["-d"],
-  :password => optionparser["-p"]  
+  :host => DBConnection.flags.H,
+  :username => DBConnection.flags.u,
+  :database => DBConnection.flags.d,
+  :password => DBConnection.flags.p  
 )
 
 #Symbolize keys
@@ -139,7 +151,7 @@ client.query_options.merge!(:symbolize_keys => true)
 
 
 
-auftraege = auftragsliste(client, VERKNUEPFUNGSFELD)
+auftraege = auftragsliste(client, DBConnection.flags.uf)
 
 puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}"
 
@@ -150,7 +162,7 @@ puts "Anzahl der zu bearbeitenden Posten im 1. Auftrag: #{liste.count}"
 
 zusammengesetzer_artikel = zusammengesetzer_artikel(client, liste.first)
 
-stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, VERKNUEPFUNGSFELD)
+stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
 
 puts "stuecklisten_artikel: "
 pp stuecklisten_artikel.first
