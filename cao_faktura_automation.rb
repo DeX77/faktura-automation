@@ -11,6 +11,11 @@ module DBConnection extend OptiFlagSet
     description "Database name for database connection. No default"
     long_form "database-name"
   end
+  
+  flag "kn" do
+    description "KundenNr for new created items"
+    long_form "kundennummer"
+  end
     
   optional_flag "H" do
     description "Hostname for database connection. Defaults to localhost"
@@ -84,10 +89,33 @@ def auftragsliste(client_connection, verknuepfungsfeld)
     and liste.ARTNUM = artikel.ARTNUM
     and artikel.#{verknuepfungsfeld} IS NOT NULL
     and artikel.MENGE_AKT < liste.MENGE
+    and auftrag.QUELLE != 1
     ")
   
   return auftraege
 
+end
+
+def get_art_kunde(client_connection, kundennummer)
+  
+  query = "select * from ADRESSEN
+  where KUNNUM1 = #{kundennummer}
+  "
+  
+   puts query if DBConnection.flags.d?
+  
+   kunde = client_connection.query(query)
+   
+   return kunde
+end
+
+def exchange_kunde(kunde, journal_eintrag)
+  
+  journal_eintrag.each do |key, value|
+    journal_eintrag[key] = kunde[key] if kunde.has_key? key 
+  end
+  
+  return journal_eintrag
 end
 
 def postenliste(client_connection, auftrag)
@@ -282,7 +310,7 @@ def exchange_artikel(listen_artikel, stuecklisten_artikel)
     
     puts "Aendere #{key} von #{value} in #{stuecklisten_artikel[key]}" if DBConnection.flags.d?
     
-    listen_artikel[key] = stuecklisten_artikel[key]    
+    listen_artikel[key] = stuecklisten_artikel[key] if stuecklisten_artikel.has_key? key    
     
   end
   
@@ -305,9 +333,9 @@ client = Mysql2::Client.new(
 #Symbolize keys
 client.query_options.merge!(:symbolize_keys => true)
 
-
-
 auftraege = auftragsliste(client, DBConnection.flags.uf)
+
+default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
 
 puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
 
@@ -332,8 +360,10 @@ auftraege.each do |auftrag|
 	puts "exchange_artikel: "
 	pp exchange_artikel
       end
+      
+      selbst_auftrag = exchange_kunde(default_kunde, auftrag)
 
-      init_einkauf(client, auftraege.first)
+      init_einkauf(client, selbst_auftrag)
 
       insert_posten(client, exchange_artikel)
 
