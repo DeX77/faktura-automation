@@ -93,29 +93,42 @@ end
 def postenliste(client_connection, auftrag)
   
   #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
-  liste = client_connection.query(
-    "select * from JOURNALPOS where JOURNAL_ID = #{auftrag[:REC_ID]}
-    ")
+  query = "select * from JOURNALPOS where JOURNAL_ID = #{auftrag[:REC_ID]}
+    and ARTIKELTYP!='F'
+    "
+  
+    puts query  if DBConnection.flags.d?
+    
+  
+  liste = client_connection.query(query)
+    
  
   return liste
   
 end
 
 def zusammengesetzer_artikel(client_connection, listen_artikel)
-  zusammengesetzer_artikel = client_connection.query(
+  query = 
     "select * from ARTIKEL
   where ARTNUM = #{listen_artikel[:ARTNUM]}
-  ")
+  "
+  puts query if DBConnection.flags.d?
+  
+  zusammengesetzer_artikel = client_connection.query(query)
   
   return zusammengesetzer_artikel
 end
 
 def stuecklisten_artikel(client_connection, zusammengesetzer_artikel, verknuepfungsfeld)
   
-  stuecklisten_artikel = client_connection.query(
+  query = 
     "select * from ARTIKEL
     where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}    
-    ")      
+    "
+    
+  puts query if DBConnection.flags.d?
+  
+  stuecklisten_artikel = client_connection.query(query)      
       
    return stuecklisten_artikel
 end
@@ -128,10 +141,19 @@ def insert_posten(client_connection, posten)
   #Loesche leere Daten
   posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1)  || (value == 0.0)) }
   
-  #Neuer Posten soll JOURNAL_ID von neuem Auftrag haben  
-  posten[:JOURNAL_ID] = "LAST_INSERT_ID()"
+  bestell_pos_fields = "
+ PREISANFRAGE BELEGNUM ADDR_ID LIEF_ADDR_ID PROJEKT_ID REC_ID POSITION VIEW_POS WARENGRUPPE ARTIKELTYP
+ ARTIKEL_ID MATCHCODE ARTNUM BARCODE LAENGE BREITE HOEHE GROESSE DIMENSION GEWICHT ME_EINHEIT PR_EINHEIT VPE MENGE
+ EPREIS GPREIS RABATT1 RABATT2 RABATT3 E_RABATT_BETRAG G_RABATT_BETRAG STEUER_CODE ALTTEIL_PROZ ALTTEIL_STCODE GEGENKTO
+ BEZEICHNUNG ALTTEIL_FLAG BRUTTO_FLAG STADIUM
+ "
+ 
+ posten.delete_if { |key,value| !bestell_pos_fields.include? key.to_s }
   
-  insert_query ="insert into JOURNALPOS
+  #Neuer Posten soll EKBESTELL_ID von neuer Bestellung haben  
+  posten[:EKBESTELL_ID] = "LAST_INSERT_ID()"
+  
+  insert_query ="insert into EKBESTELL_POS
     (#{posten.keys.join(',')})
     VALUES(#{value_join(posten.values)})
     "
@@ -141,7 +163,7 @@ def insert_posten(client_connection, posten)
   
 end
 
-def copy_auftrag(client_connection, auftrag)
+def init_einkauf(client_connection, auftrag)
   
   #REC_ID ist primär Key!
   auftrag.delete :REC_ID
@@ -149,10 +171,85 @@ def copy_auftrag(client_connection, auftrag)
   #Loesche leere Daten
   auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1)  || (value == 0.0)) }
   
+  #Loesche unbekannte Felder
+  
+  ekbestell_fields = "
+  REC_ID         
+ TERM_ID        
+ MA_ID          
+ PREISANFRAGE   
+ ADDR_ID        
+ ASP_ID         
+ LIEF_ADDR_ID   
+ PROJEKT_ID     
+ BELEGNUM       
+ BELEGDATUM     
+ TERMIN         
+ LIEFART        
+ ZAHLART        
+ GLOBRABATT     
+ GEWICHT        
+ MWST_0         
+ MWST_1         
+ MWST_2         
+ MWST_3         
+ NSUMME_0       
+ NSUMME_1       
+ NSUMME_2       
+ NSUMME_3       
+ NSUMME         
+ MSUMME_0       
+ MSUMME_1       
+ MSUMME_2       
+ MSUMME_3       
+ MSUMME         
+ BSUMME_0       
+ BSUMME_1       
+ BSUMME_2       
+ BSUMME_3       
+ BSUMME         
+ ATSUMME        
+ ATMSUMME       
+ WAEHRUNG       
+ KURS           
+ GEGENKONTO     
+ SOLL_STAGE     
+ SOLL_SKONTO    
+ SOLL_NTAGE     
+ STADIUM        
+ ERSTELLT       
+ ERST_NAME      
+ KUN_NUM        
+ KUN_ANREDE     
+ KUN_NAME1      
+ KUN_NAME2      
+ KUN_NAME3      
+ KUN_ABTEILUNG  
+ KUN_STRASSE    
+ KUN_LAND       
+ KUN_PLZ        
+ KUN_ORT        
+ USR1           
+ USR2           
+ KOPFTEXT       
+ FUSSTEXT       
+ PROJEKT        
+ ORGNUM         
+ BEST_NAME      
+ BEST_CODE      
+ BEST_DATUM     
+ INFO           
+ FREIGABE1_FLAG 
+ PRINT_FLAG     
+ BRUTTO_FLAG    
+ MWST_FREI_FLAG
+ "
+ 
+ auftrag.delete_if { |key, value| !ekbestell_fields.include? key.to_s }
+ 
   auftrag[:ERSTELLT] = "CURDATE()"
-  auftrag[:RDATUM] = "NOW()"
           
-  insert_query ="insert into JOURNAL
+  insert_query ="insert into EKBESTELL
     (#{auftrag.keys.join(',')})
     VALUES(#{value_join(auftrag.values)})
     "
@@ -214,28 +311,39 @@ auftraege = auftragsliste(client, DBConnection.flags.uf)
 
 puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
 
+auftraege.each do |auftrag|
+    liste = postenliste(client, auftrag)
+    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
+    
+    liste.each do |posten|
+      
+      zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
+      
+      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
 
-liste = postenliste(client, auftraege.first)
+      if DBConnection.flags.d? 
+	puts "stuecklisten_artikel: " 
+	pp stuecklisten_artikel.first
+      end
 
-puts "Anzahl der zu bearbeitenden Posten im 1. Auftrag: #{liste.count}" if DBConnection.flags.d?
+      exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
 
-zusammengesetzer_artikel = zusammengesetzer_artikel(client, liste.first)
+      if DBConnection.flags.d?
+	puts "exchange_artikel: "
+	pp exchange_artikel
+      end
 
-stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
+      init_einkauf(client, auftraege.first)
 
-if DBConnection.flags.d? 
-  puts "stuecklisten_artikel: " 
-  pp stuecklisten_artikel.first
+      insert_posten(client, exchange_artikel)
+
+    end
 end
 
-exchange_artikel = exchange_artikel(liste.first, stuecklisten_artikel.first)
 
-if DBConnection.flags.d?
-  puts "exchange_artikel: "
-  pp exchange_artikel
-end
 
-copy_auftrag(client, auftraege.first)
 
-insert_posten(client, exchange_artikel)
+
+
+
 
