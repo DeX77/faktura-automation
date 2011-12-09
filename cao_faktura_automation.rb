@@ -342,15 +342,14 @@ def copy_file_link(client_connection, journal_item_from, journal_item_to)
   pp journal_item_from
 
   query = "select * from LINK
-  where REC_ID = #{journal_item_from[:REC_ID]}
+  where REC_ID = #{journal_item_from}
   "
 
   puts query if DBConnection.flags.d?
 
-  link = client_connection.query(query)
-
-  if !link.empty?
-
+  link = client_connection.query(query).first
+  
+  unless link.nil?
     link[:REC_ID] = journal_item_to
 
     insert_query ="insert into LINK
@@ -358,11 +357,9 @@ def copy_file_link(client_connection, journal_item_from, journal_item_to)
     VALUES(#{value_join(link.values)})
     "
 
-
     return client_connection.query(insert_query) unless DBConnection.flags.dr?
   end
-
-
+  
 end
 
 def backup_last_journal(client_connection)
@@ -411,8 +408,9 @@ def process_auftraege(client)
 
     liste = postenliste(client, auftrag)
 
-    auftrags_nummer = auftrag[:VRENUM]
-    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrags_nummer} : #{liste.count}" if DBConnection.flags.d?
+    auftrags_id = auftrag[:REC_ID]
+    
+    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
 
     selbst_auftrag = exchange_kunde(default_kunde, auftrag)
 
@@ -442,7 +440,7 @@ def process_auftraege(client)
 
     end unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
 
-    #copy_file_link(client, auftrags_nummer, neuer_einkauf) unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
+    copy_file_link(client, auftrags_id, neuer_einkauf) unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
 
   end
 end
