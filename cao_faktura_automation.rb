@@ -1,5 +1,22 @@
 #!/usr/bin/env ruby
+#    cao_faktura_automatio - Some ruby script to automate tasks for CAO Faktura
+#    Copyright (C) 2011 Daniel Exner <dex@dragonslave.de>
+#
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+    
 require 'rubygems'
 require 'mysql2'
 require 'pp'
@@ -149,7 +166,7 @@ def zusammengesetzer_artikel(client_connection, listen_artikel)
       "select * from ARTIKEL
   where ARTNUM = #{listen_artikel[:ARTNUM]}
       "
-  puts query if DBConnection.flags.d?
+  puts "zusammengesetzer_artikel:"+query if DBConnection.flags.d?
 
   zusammengesetzer_artikel = client_connection.query(query)
 
@@ -163,14 +180,14 @@ def stuecklisten_artikel(client_connection, zusammengesetzer_artikel, verknuepfu
     where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}
       "
 
-  puts query if DBConnection.flags.d?
+  puts "stueckliste: "+query if DBConnection.flags.d?
 
   stuecklisten_artikel = client_connection.query(query)
 
   return stuecklisten_artikel
 end
 
-def insert_posten(client_connection, posten, neuer_einkauf)
+def insert_posten_einkauf(client_connection, posten, neuer_einkauf)
 
   #REC_ID ist primär Key!
   posten.delete :REC_ID
@@ -205,7 +222,42 @@ def insert_posten(client_connection, posten, neuer_einkauf)
     (#{posten.keys.join(',')})
     VALUES(#{value_join(posten.values)})
     "
-  puts "insert_query: #{insert_query}" if DBConnection.flags.d?
+  puts "insert_query neuer einkaufsposten: #{insert_query}" if DBConnection.flags.d?
+
+  return client_connection.query(insert_query) unless DBConnection.flags.dr?
+
+end
+
+def insert_posten_auftrag(client_connection, posten, neuer_auftrag)
+
+  #REC_ID ist primär Key!
+  posten.delete :REC_ID
+
+  #Loesche leere Daten
+  posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
+
+  #Neuer Posten soll JOURNAL_ID von neuer Bestellung haben  
+  posten[:JOURNAL_ID] = neuer_auftrag
+
+  #Mengenanpassung
+  query = "select MENGE_AKT from ARTIKEL where ARTNUM =#{posten[:ARTNUM]}"
+
+  puts "query: #{query}" if DBConnection.flags.d?
+  #pp posten
+  
+  vorhandene_menge = client_connection.query(query).first[:MENGE_AKT]
+
+  if vorhandene_menge < posten[:MENGE]
+    posten[:MENGE] -= vorhandene_menge
+  end
+
+  puts "posten[:MENGE]: #{posten[:MENGE]}" if DBConnection.flags.d?
+
+  insert_query ="insert into JOURNALPOS
+    (#{posten.keys.join(',')})
+    VALUES(#{value_join(posten.values)})
+    "
+  puts "insert_query neuer auftragsposten : #{insert_query}" if DBConnection.flags.d?
 
   return client_connection.query(insert_query) unless DBConnection.flags.dr?
 
@@ -294,15 +346,46 @@ def init_einkauf(client_connection, auftrag)
  "
 
   auftrag.delete_if { |key, value| !ekbestell_fields.include? key.to_s }
+  
+  #auftrag[:ADATUM] = "CURDATE()"
+  auftrag[:TERMIN] = "CURDATE()"
+  #auftrag[:RDATUM] = "NOW()"
+  auftrag[:BEST_DATUM] = "CURDATE()"
 
   insert_query ="insert into EKBESTELL
     (#{auftrag.keys.join(',')})
     VALUES(#{value_join(auftrag.values)})
     "
 
-  pp auftrag.keys if DBConnection.flags.d?
+  #pp auftrag.keys if DBConnection.flags.d?
 
-  puts "insert_query: #{insert_query}" if DBConnection.flags.d?
+  puts "insert_query neuer einkauf: #{insert_query}" if DBConnection.flags.d?
+
+  return client_connection.query(insert_query) unless DBConnection.flags.dr?
+
+end
+
+def init_auftrag(client_connection, auftrag)
+
+  #REC_ID ist primär Key!
+  auftrag.delete :REC_ID
+
+  #Datum
+  auftrag[:ADATUM] = "CURDATE()"
+  auftrag[:LDATUM] = "CURDATE()"
+  auftrag[:RDATUM] = "NOW()"
+  auftrag[:BEST_DATUM] = "CURDATE()"
+  auftrag[:TERMIN] = "CURDATE()"
+  
+  #Loesche leere Daten
+  auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
+
+  insert_query ="insert into JOURNAL
+    (#{auftrag.keys.join(',')})
+    VALUES(#{value_join(auftrag.values)})
+    "
+
+  puts "insert_query neuer auftrag: #{insert_query}" if DBConnection.flags.d?
 
   return client_connection.query(insert_query) unless DBConnection.flags.dr?
 
@@ -343,28 +426,15 @@ end
 
 def copy_file_link(client_connection, journal_item_from, journal_item_to)
 
-  puts "journal_item_from"
-  pp journal_item_from
-
-  query = "select * from LINK
-  where REC_ID = #{journal_item_from}
-  "
-
-  puts query if DBConnection.flags.d?
-
-  link = client_connection.query(query).first
-  
-  unless link.nil?
-    link[:REC_ID] = journal_item_to
-
-    insert_query ="insert into LINK
-    (#{link.keys.join(',')})
-    VALUES(#{value_join(link.values)})
-    "
-
-    return client_connection.query(insert_query) unless DBConnection.flags.dr?
-  end
-  
+  insert_query =
+ "insert into LINK (MODUL_ID,PFAD,DATEI,BEMERKUNG,LAST_CHANGE,LAST_CHANGE_USER,OPEN_FLAG,OPEN_USER,OPEN_TIME,REC_ID)
+ select MODUL_ID,PFAD,DATEI,BEMERKUNG,LAST_CHANGE,LAST_CHANGE_USER,OPEN_FLAG,OPEN_USER,OPEN_TIME, #{journal_item_to}
+ from LINK
+ where REC_ID=#{journal_item_from}
+ "
+    
+ return client_connection.query(insert_query) unless DBConnection.flags.dr?
+ 
 end
 
 def backup_last_journal(client_connection)
@@ -377,7 +447,7 @@ def backup_last_journal(client_connection)
 
   if DBConnection.flags.d?
     puts "letzter eingefuegter Eintrag"
-    pp last_entry
+    #pp last_entry
   end
 
   return last_entry.values.last
@@ -398,6 +468,32 @@ def init_db_connection(db)
   client.query_options.merge!(:symbolize_keys => true)
 
   return client
+end
+
+def stueckliste(client_connection, artikel)
+  
+  out = []
+  
+  query = "
+  select * from ARTIKEL_STUECKLIST
+  where REC_ID =
+  (select REC_ID from ARTIKEL where ARTNUM=#{artikel[:ARTNUM]})
+  "
+  
+  articles = client_connection.query(query).first
+  
+  articles.each do |art|
+    query = "select * from ARTIKEL where REC_ID = #{art[:ART_ID].first}"
+    out << client_connection.query(query).first
+  end
+  
+  return out
+end
+
+def init_einkauf_stueckliste(client, liste, neuer_einkauf)
+  liste.each do |stueck|
+    insert_posten_einkauf(client, stueck, neuer_einkauf)
+  end
 end
 
 def process_auftraege(client)
@@ -432,12 +528,21 @@ def process_auftraege(client)
     puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
 
     selbst_auftrag = exchange_kunde(default_kunde, auftrag)
+    
+    puts "selbst auftrag"
+    pp selbst_auftrag
 
+    init_auftrag(client, selbst_auftrag)
+    
+    neuer_auftrag = backup_last_journal(client)
+    
     init_einkauf(client, selbst_auftrag)
 
     neuer_einkauf = backup_last_journal(client)
 
     liste.each do |posten|
+      
+      
 
       zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
 
@@ -445,22 +550,27 @@ def process_auftraege(client)
 
       if DBConnection.flags.d?
         puts "stuecklisten_artikel: "
-        pp stuecklisten_artikel.first
       end
 
       exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
 
       if DBConnection.flags.d?
         puts "exchange_artikel: "
-        pp exchange_artikel
       end
 
-      insert_posten(client, exchange_artikel, neuer_einkauf)
-
-    end unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
+      insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
+      
+      sl = stueckliste(client, stuecklisten_artikel.first)
+      
+      init_einkauf_stueckliste(client, sl, neuer_einkauf)
+      
+      
+      
+    end
 
     #Eventuelle Dateilinks mitkopieren
-    copy_file_link(client, auftrags_id, neuer_einkauf) unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
+    #copy_file_link(client, auftrags_id, neuer_einkauf)
+    copy_file_link(client, auftrags_id, neuer_auftrag)
 
     #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
     
@@ -473,10 +583,4 @@ end
 client = init_db_connection(DBConnection)
 
 process_auftraege(client)
-
-
-
-
-
-
 
