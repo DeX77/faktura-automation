@@ -19,6 +19,11 @@ module DBConnection
     long_form "kundennummer"
     value_matches ["KundenNr must be a number", /^\d+$/]
   end
+  
+  flag "s" do
+    description "File for processed Orders"
+    long_form "savefile"    
+  end
 
   optional_flag "H" do
     description "Hostname for database connection. Defaults to localhost"
@@ -396,10 +401,24 @@ def init_db_connection(db)
 end
 
 def process_auftraege(client)
-
-
-  auftraege = auftragsliste(client, DBConnection.flags.uf)
-
+  
+  #Oeffne Datei mit bereits bearbeiteten Auftraegen
+  save_file = File.new(DBConnection.flags.s, 'a+')
+  
+  bearbeitete_auftraege = save_file.read
+  
+  #Datenbankanfrage nach zu bearbeitenden Auftraegen
+  auftraege = auftragsliste(client, DBConnection.flags.uf).to_a
+  
+  puts "auftraege vorher: #{auftraege.count}"
+  
+  #Loesche bereits bearbeite raus
+  auftraege.each do |auftrag| 
+    auftraege.delete(auftrag) if bearbeitete_auftraege.include? auftrag[:REC_ID].to_s
+  end
+  
+  puts "auftraege nachher: #{auftraege.count}"
+  
   default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
 
   puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
@@ -440,8 +459,13 @@ def process_auftraege(client)
 
     end unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
 
+    #Eventuelle Dateilinks mitkopieren
     copy_file_link(client, auftrags_id, neuer_einkauf) unless neuer_einkauf.nil? #sollte eigentlich nicht passieren
 
+    #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
+    
+    save_file.puts auftrags_id.to_s
+    
   end
 end
 
