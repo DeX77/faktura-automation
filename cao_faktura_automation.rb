@@ -122,6 +122,21 @@ def auftragsliste(client_connection, verknuepfungsfeld)
 
 end
 
+def einkaufsliste(client_connection, verknuepfungsfeld)
+  
+  query ="select * from EKBESTELL as auftrag,
+  EKBESTELL_POS as liste,
+  ARTIKEL as artikel
+    where auftrag.REC_ID = liste.EKBESTELL_ID
+    and liste.ARTNUM = artikel.ARTNUM
+    and artikel.#{verknuepfungsfeld} IS NOT NULL
+    and artikel.MENGE_AKT < liste.MENGE
+   "
+   
+   return client_connection.query(query)
+   
+end
+
 def get_art_kunde(client_connection, kundennummer)
 
   query = "select * from ADRESSEN
@@ -136,16 +151,31 @@ def get_art_kunde(client_connection, kundennummer)
 end
 
 def exchange_kunde(kunde, journal_eintrag)
-
-  journal_eintrag.each do |key, value |
-    journal_eintrag[key] = kunde[key]  if kunde.has_key? key
-    end
+  
+  kundenfelder = {
+    :KUN_NUM => :KUNNUM1 ,
+    :KUN_ANREDE => :ANREDE ,
+    :KUN_NAME1 => :NAME1 ,
+    :KUN_NAME2 => :NAME2 ,
+    :KUN_NAME3 => :NAME3 ,
+    :KUN_ABTEILUNG => :ABTEILUNG ,
+    :KUN_STRASSE => :STRASSE ,
+    :KUN_LAND => :LAND ,
+    :KUN_PLZ => :PLZ ,
+    :KUN_ORT  => :ORT
+  }
+  
+  kundenfelder.each do |feld_journal, feld_adresse|
+    
+    journal_eintrag[feld_journal] = kunde[feld_adresse]
+    
+  end
 
   return journal_eintrag
 end
 
-def postenliste(client_connection, auftrag)
-
+def auftrag_postenliste(client_connection, auftrag)
+  
   #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
   query = "select * from JOURNALPOS where JOURNAL_ID = #{auftrag[:REC_ID]}
     and ARTIKELTYP!='F'
@@ -161,6 +191,24 @@ def postenliste(client_connection, auftrag)
 
 end
 
+def einkauf_postenliste(client_connection, einkauf)
+  
+  #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
+  query = "select * from EKBESTELL_POS where EKBESTELL_ID = #{einkauf[:REC_ID]}
+    and ARTIKELTYP!='F'
+    "
+
+  puts query if DBConnection.flags.d?
+
+
+  liste = client_connection.query(query)
+
+
+  return liste
+
+end
+
+
 def zusammengesetzer_artikel(client_connection, listen_artikel)
   query =
       "select * from ARTIKEL
@@ -169,6 +217,9 @@ def zusammengesetzer_artikel(client_connection, listen_artikel)
   puts "zusammengesetzer_artikel:"+query if DBConnection.flags.d?
 
   zusammengesetzer_artikel = client_connection.query(query)
+  zusammengesetzer_artikel.first[:MENGE] = listen_artikel[:MENGE]
+  
+  puts "zusammengesetzer_artikel.first[:MENGE] = #{zusammengesetzer_artikel.first[:MENGE]}"
 
   return zusammengesetzer_artikel
 end
@@ -183,13 +234,19 @@ def stuecklisten_artikel(client_connection, zusammengesetzer_artikel, verknuepfu
   puts "stueckliste: "+query if DBConnection.flags.d?
 
   stuecklisten_artikel = client_connection.query(query)
-
+  
+  #Menge mitschleifen!
+  stuecklisten_artikel.first[:MENGE] = zusammengesetzer_artikel[:MENGE]
+  
+  puts "stuecklisten_artikel.first[:MENGE]: = #{stuecklisten_artikel.first[:MENGE]}"
+  
   return stuecklisten_artikel
 end
 
 def insert_posten_einkauf(client_connection, posten, neuer_einkauf)
 
   #REC_ID ist primär Key!
+  #posten[:ARTIKEL_ID] = posten[:REC_ID]
   posten.delete :REC_ID
 
   #Loesche leere Daten
@@ -208,8 +265,11 @@ def insert_posten_einkauf(client_connection, posten, neuer_einkauf)
   posten[:EKBESTELL_ID] = neuer_einkauf
 
   #Mengenanpassung
-  query = "select MENGE_AKT from ARTIKEL where REC_ID =#{posten[:ARTIKEL_ID]}"
-
+  query = "select MENGE_AKT from ARTIKEL where ARTNUM =#{posten[:ARTNUM]}"
+  
+  puts "Mengenanpassung Query = #{query}" if DBConnection.flags.d? 
+  #pp posten
+  
   vorhandene_menge = client_connection.query(query).first[:MENGE_AKT]
 
   if vorhandene_menge < posten[:MENGE]
@@ -265,16 +325,12 @@ end
 
 def init_einkauf(client_connection, auftrag)
 
-  #REC_ID ist primär Key!
-  auftrag.delete :REC_ID
-
   #Loesche leere Daten
   auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
 
   #Loesche unbekannte Felder
 
   ekbestell_fields = "
-  REC_ID         
  TERM_ID        
  MA_ID          
  PREISANFRAGE   
@@ -367,15 +423,119 @@ end
 
 def init_auftrag(client_connection, auftrag)
 
-  #REC_ID ist primär Key!
-  auftrag.delete :REC_ID
-
+  journal_felder = "
+  TERM_ID           
+ MA_ID             
+ QUELLE            
+ QUELLE_SUB        
+ ADDR_ID           
+ ASP_ID            
+ LIEF_ADDR_ID      
+ PROJEKT_ID        
+ AGBNUM            
+ ATRNUM            
+ VRENUM            
+ VLSNUM            
+ VERSNR            
+ FOLGENR           
+ KM_STAND          
+ KFZ_ID            
+ VERTRETER_ID      
+ VERTRETER_ABR_ID  
+ GLOBRABATT        
+ AGBDATUM          
+ ADATUM            
+ RDATUM            
+ LDATUM            
+ KLASSE_ID         
+ TERMIN            
+ PR_EBENE          
+ LIEFART           
+ ZAHLART           
+ GEWICHT           
+ KOST_NETTO        
+ WERT_NETTO        
+ LOHN              
+ WARE              
+ TKOST             
+ ROHGEWINN         
+ MWST_0            
+ MWST_1            
+ MWST_2            
+ MWST_3            
+ NSUMME_0          
+ NSUMME_1          
+ NSUMME_2          
+ NSUMME_3          
+ NSUMME            
+ MSUMME_0          
+ MSUMME_1          
+ MSUMME_2          
+ MSUMME_3          
+ MSUMME            
+ BSUMME_0          
+ BSUMME_1          
+ BSUMME_2          
+ BSUMME_3          
+ BSUMME            
+ ATSUMME           
+ ATMSUMME          
+ PROVIS_WERT       
+ WAEHRUNG          
+ KURS              
+ GEGENKONTO        
+ SOLL_NTAGE        
+ SOLL_SKONTO       
+ SOLL_STAGE        
+ SOLL_RATEN        
+ SOLL_RATBETR      
+ SOLL_RATINTERVALL 
+ STADIUM           
+ POS_TA_ID         
+ ERSTELLT          
+ ERST_NAME         
+ KUN_NUM           
+ KUN_ANREDE        
+ KUN_NAME1         
+ KUN_NAME2         
+ KUN_NAME3         
+ KUN_ABTEILUNG     
+ KUN_STRASSE       
+ KUN_LAND          
+ KUN_PLZ           
+ KUN_ORT           
+ USR1              
+ USR2              
+ KOPFTEXT          
+ FUSSTEXT          
+ PROJEKT           
+ ORGNUM            
+ BEST_NAME         
+ BEST_CODE         
+ BEST_DATUM        
+ INFO              
+ TRACKINGCODE      
+ FREIGABE1_FLAG    
+ PRINT_FLAG        
+ BRUTTO_FLAG       
+ MWST_FREI_FLAG    
+ PROVIS_BERECHNET  
+ SHOP_ID           
+ SHOP_ORDERID      
+ SHOP_STATUS       
+ SHOP_CHANGE_FLAG  
+ AUSLAND_TYP
+  "
+  
+  auftrag.delete_if { |key,value| !journal_felder.include? key.to_s }
+  
+  
   #Datum
   auftrag[:ADATUM] = "CURDATE()"
   auftrag[:LDATUM] = "CURDATE()"
   auftrag[:RDATUM] = "NOW()"
   auftrag[:BEST_DATUM] = "CURDATE()"
-  auftrag[:TERMIN] = "CURDATE()"
+  #auftrag[:TERMIN] = "CURDATE()"
   
   #Loesche leere Daten
   auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
@@ -471,6 +631,8 @@ def init_db_connection(db)
 end
 
 def stueckliste(client_connection, artikel)
+  #puts "stueckliste Artikel"
+  #pp artikel
   
   out = []
   
@@ -480,11 +642,19 @@ def stueckliste(client_connection, artikel)
   (select REC_ID from ARTIKEL where ARTNUM=#{artikel[:ARTNUM]})
   "
   
-  articles = client_connection.query(query).first
+  puts "stuecklisten query = #{query}"
+  
+  articles = client_connection.query(query)
   
   articles.each do |art|
-    query = "select * from ARTIKEL where REC_ID = #{art[:ART_ID].first}"
-    out << client_connection.query(query).first
+    query = "select * from ARTIKEL where REC_ID = #{art[:ART_ID]}"
+    
+    blah = client_connection.query(query).first
+    blah[:MENGE] = artikel[:MENGE] * art[:MENGE]
+    #puts "stueckliste blah"
+    #pp blah
+    puts "stueckliste blah[:MENGE] = #{blah[:MENGE]}"
+    out << blah
   end
   
   return out
@@ -496,15 +666,14 @@ def init_einkauf_stueckliste(client, liste, neuer_einkauf)
   end
 end
 
-def process_auftraege(client)
-  
-  #Oeffne Datei mit bereits bearbeiteten Auftraegen
+def process_einkauf(client)
+    #Oeffne Datei mit bereits bearbeiteten Auftraegen
   save_file = File.new(DBConnection.flags.s, 'a+')
   
   bearbeitete_auftraege = save_file.read
   
   #Datenbankanfrage nach zu bearbeitenden Auftraegen
-  auftraege = auftragsliste(client, DBConnection.flags.uf).to_a
+  auftraege = einkaufsliste(client, DBConnection.flags.uf).to_a
   
   puts "auftraege vorher: #{auftraege.count}"
   
@@ -521,7 +690,7 @@ def process_auftraege(client)
 
   auftraege.each do |auftrag|
 
-    liste = postenliste(client, auftrag)
+    liste = einkauf_postenliste(client, auftrag)
 
     auftrags_id = auftrag[:REC_ID]
     
@@ -529,8 +698,8 @@ def process_auftraege(client)
 
     selbst_auftrag = exchange_kunde(default_kunde, auftrag)
     
-    puts "selbst auftrag"
-    pp selbst_auftrag
+    #puts "selbst auftrag"
+    #pp selbst_auftrag
 
     init_auftrag(client, selbst_auftrag)
     
@@ -548,15 +717,83 @@ def process_auftraege(client)
 
       stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
 
-      if DBConnection.flags.d?
-        puts "stuecklisten_artikel: "
-      end
-
       exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
 
-      if DBConnection.flags.d?
-        puts "exchange_artikel: "
-      end
+      insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
+      
+      sl = stueckliste(client, stuecklisten_artikel.first)
+      
+      init_einkauf_stueckliste(client, sl, neuer_einkauf)
+      
+      
+      
+    end
+
+    #Eventuelle Dateilinks mitkopieren
+    #copy_file_link(client, auftrags_id, neuer_einkauf)
+    copy_file_link(client, auftrags_id, neuer_auftrag)
+
+    #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
+    
+    save_file.puts auftrags_id.to_s
+    
+  end
+end
+
+def process_auftraege(client)
+  
+  #Oeffne Datei mit bereits bearbeiteten Auftraegen
+  save_file = File.new(DBConnection.flags.s, 'a+')
+  
+  bearbeitete_auftraege = save_file.read
+  
+  #Datenbankanfrage nach zu bearbeitenden Auftraegen
+  auftraege = auftragsliste(client, DBConnection.flags.uf).to_a
+ 
+  
+  puts "auftraege vorher: #{auftraege.count}"
+  
+  #Loesche bereits bearbeite raus
+  auftraege.each do |auftrag| 
+    auftraege.delete(auftrag) if bearbeitete_auftraege.include? auftrag[:REC_ID].to_s
+  end
+  
+  puts "auftraege nachher: #{auftraege.count}"
+  
+  default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
+
+  puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
+
+  auftraege.each do |auftrag|
+
+    liste = auftrag_postenliste(client, auftrag)
+
+    auftrags_id = auftrag[:REC_ID]
+    
+    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
+
+    selbst_auftrag = exchange_kunde(default_kunde, auftrag)
+    
+    #puts "selbst auftrag"
+    #pp selbst_auftrag
+
+    init_auftrag(client, selbst_auftrag)
+    
+    neuer_auftrag = backup_last_journal(client)
+    
+    init_einkauf(client, selbst_auftrag)
+
+    neuer_einkauf = backup_last_journal(client)
+
+    liste.each do |posten|
+      
+      
+
+      zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
+
+      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
+
+      exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
 
       insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
       
@@ -583,4 +820,8 @@ end
 client = init_db_connection(DBConnection)
 
 process_auftraege(client)
+
+process_einkauf(client)
+
+
 
