@@ -114,7 +114,7 @@ def auftragsliste(client_connection, verknuepfungsfeld)
     where auftrag.REC_ID = liste.JOURNAL_ID
     and liste.ARTNUM = artikel.ARTNUM
     and artikel.#{verknuepfungsfeld} IS NOT NULL
-    and artikel.MENGE_AKT < liste.MENGE
+    and artikel.MENGE_AKT <= liste.MENGE
     and auftrag.QUELLE != 1
     ")
 
@@ -130,7 +130,7 @@ def einkaufsliste(client_connection, verknuepfungsfeld)
     where auftrag.REC_ID = liste.EKBESTELL_ID
     and liste.ARTNUM = artikel.ARTNUM
     and artikel.#{verknuepfungsfeld} IS NOT NULL
-    and artikel.MENGE_AKT < liste.MENGE
+    and artikel.MENGE_AKT <= liste.MENGE
    "
    
    return client_connection.query(query)
@@ -194,7 +194,7 @@ end
 def einkauf_postenliste(client_connection, einkauf)
   
   #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
-  query = "select * from EKBESTELL_POS where EKBESTELL_ID = #{einkauf[:REC_ID]}
+  query = "select * from EKBESTELL_POS where EKBESTELL_ID = #{einkauf[:EKBESTELL_ID]}
     and ARTIKELTYP!='F'
     "
 
@@ -221,26 +221,31 @@ def zusammengesetzer_artikel(client_connection, listen_artikel)
   
   puts "zusammengesetzer_artikel.first[:MENGE] = #{zusammengesetzer_artikel.first[:MENGE]}"
 
-  return zusammengesetzer_artikel
+  return zusammengesetzer_artikel.first
 end
 
 def stuecklisten_artikel(client_connection, zusammengesetzer_artikel, verknuepfungsfeld)
 
-  query =
-      "select * from ARTIKEL
-    where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}
-      "
+  if zusammengesetzer_artikel[verknuepfungsfeld.to_sym].nil?
+    return zusammengesetzer_artikel
+  else
+    query =
+	"select * from ARTIKEL
+      where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}
+	"
 
-  puts "stueckliste: "+query if DBConnection.flags.d?
+    puts "stueckliste: "+query if DBConnection.flags.d?
 
-  stuecklisten_artikel = client_connection.query(query)
-  
-  #Menge mitschleifen!
-  stuecklisten_artikel.first[:MENGE] = zusammengesetzer_artikel[:MENGE]
-  
-  puts "stuecklisten_artikel.first[:MENGE]: = #{stuecklisten_artikel.first[:MENGE]}"
-  
-  return stuecklisten_artikel
+    stuecklisten_artikel = client_connection.query(query)
+    
+    #Menge mitschleifen!
+    stuecklisten_artikel.first[:MENGE] = zusammengesetzer_artikel[:MENGE]
+    
+    puts "stuecklisten_artikel.first[:MENGE]: = #{stuecklisten_artikel.first[:MENGE]}"
+    
+    return stuecklisten_artikel.first
+    
+  end
 end
 
 def insert_posten_einkauf(client_connection, posten, neuer_einkauf)
@@ -290,8 +295,63 @@ end
 
 def insert_posten_auftrag(client_connection, posten, neuer_auftrag)
 
-  #REC_ID ist primär Key!
-  posten.delete :REC_ID
+  journal_pos_fields = "
+ QUELLE          
+ QUELLE_SUB      
+ QUELLE_SRC      
+ PROJEKT_ID      
+ JOURNAL_ID      
+ WARENGRUPPE     
+ ARTIKELTYP      
+ ARTIKEL_ID      
+ TOP_POS_ID      
+ ADDR_ID         
+ LTERMIN         
+ ATRNUM          
+ VRENUM          
+ POSITION        
+ VIEW_POS        
+ MATCHCODE       
+ ARTNUM          
+ BARCODE         
+ MENGE           
+ LAENGE          
+ BREITE          
+ HOEHE           
+ GROESSE         
+ DIMENSION       
+ GEWICHT         
+ ME_EINHEIT      
+ PR_EINHEIT      
+ VPE             
+ EK_PREIS        
+ CALC_FAKTOR     
+ EPREIS          
+ GPREIS          
+ E_RGEWINN       
+ G_RGEWINN       
+ RABATT          
+ RABATT2         
+ RABATT3         
+ E_RABATT_BETRAG 
+ G_RABATT_BETRAG 
+ STEUER_CODE     
+ ALTTEIL_PROZ    
+ ALTTEIL_STCODE  
+ PROVIS_PROZ     
+ PROVIS_WERT     
+ GEBUCHT         
+ GEGENKTO        
+ BEZEICHNUNG     
+ SN_FLAG         
+ ALTTEIL_FLAG    
+ BEZ_FEST_FLAG   
+ BRUTTO_FLAG     
+ NO_RABATT_FLAG  
+ APOS_FLAG 
+ "
+ 
+ posten.delete_if { |key, value| !journal_pos_fields.include? key.to_s }
 
   #Loesche leere Daten
   posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
@@ -675,65 +735,69 @@ def process_einkauf(client)
   #Datenbankanfrage nach zu bearbeitenden Auftraegen
   auftraege = einkaufsliste(client, DBConnection.flags.uf).to_a
   
-  puts "auftraege vorher: #{auftraege.count}"
+  puts "EK-Bestellung vorher: #{auftraege.count}"
   
   #Loesche bereits bearbeite raus
   auftraege.each do |auftrag| 
     auftraege.delete(auftrag) if bearbeitete_auftraege.include? auftrag[:REC_ID].to_s
   end
   
-  puts "auftraege nachher: #{auftraege.count}"
+  puts "EK-Bestellung nachher: #{auftraege.count}"
   
   default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
 
-  puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
+  puts "Anzahl zu bearbeitender EK-Bestellung: #{auftraege.count}" if DBConnection.flags.d?
 
+  pp auftraege
+  
   auftraege.each do |auftrag|
 
     liste = einkauf_postenliste(client, auftrag)
 
     auftrags_id = auftrag[:REC_ID]
     
-    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
+    puts "Anzahl der zu bearbeitenden Posten im EK-Bestellung #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
 
-    selbst_auftrag = exchange_kunde(default_kunde, auftrag)
-    
-    #puts "selbst auftrag"
-    #pp selbst_auftrag
-
-    init_auftrag(client, selbst_auftrag)
-    
-    neuer_auftrag = backup_last_journal(client)
-    
-    init_einkauf(client, selbst_auftrag)
-
-    neuer_einkauf = backup_last_journal(client)
-
-    liste.each do |posten|
+    if liste.count > 0
+      selbst_auftrag = exchange_kunde(default_kunde, auftrag)
       
-      
+      #puts "selbst auftrag"
+      #pp selbst_auftrag
 
-      zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
+      init_auftrag(client, selbst_auftrag)
+      
+      neuer_auftrag = backup_last_journal(client)
+      
+      init_einkauf(client, selbst_auftrag)
 
-      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
+      neuer_einkauf = backup_last_journal(client)
 
-      exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
+      liste.each do |posten|
+	
+	
 
-      insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
-      
-      sl = stueckliste(client, stuecklisten_artikel.first)
-      
-      init_einkauf_stueckliste(client, sl, neuer_einkauf)
-      
-      
-      
+	zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
+
+	stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel, DBConnection.flags.uf)
+
+	exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
+
+	insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
+	
+	sl = stueckliste(client, stuecklisten_artikel)
+	
+	init_einkauf_stueckliste(client, sl, neuer_einkauf)
+	
+	
+	
+      end
+
+      #Eventuelle Dateilinks mitkopieren
+      #copy_file_link(client, auftrags_id, neuer_einkauf)
+      copy_file_link(client, auftrags_id, neuer_auftrag)
+
+      #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
     end
-
-    #Eventuelle Dateilinks mitkopieren
-    #copy_file_link(client, auftrags_id, neuer_einkauf)
-    copy_file_link(client, auftrags_id, neuer_auftrag)
-
-    #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
     
     save_file.puts auftrags_id.to_s
     
@@ -791,13 +855,14 @@ def process_auftraege(client)
 
       zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
 
-      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel.first, DBConnection.flags.uf)
+      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel, DBConnection.flags.uf)
+      
 
-      exchange_artikel = exchange_artikel(posten, stuecklisten_artikel.first)
+      exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
 
       insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
       
-      sl = stueckliste(client, stuecklisten_artikel.first)
+      sl = stueckliste(client, stuecklisten_artikel)
       
       init_einkauf_stueckliste(client, sl, neuer_einkauf)
       
@@ -820,6 +885,8 @@ end
 client = init_db_connection(DBConnection)
 
 process_auftraege(client)
+
+puts "------------------------------------------------------------------------------------------------"
 
 process_einkauf(client)
 
