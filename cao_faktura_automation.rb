@@ -116,6 +116,7 @@ def auftragsliste(client_connection, verknuepfungsfeld)
     and artikel.#{verknuepfungsfeld} IS NOT NULL
     and artikel.MENGE_AKT <= liste.MENGE
     and auftrag.QUELLE != 1
+    group by auftrag.REC_ID
     ")
 
   return auftraege
@@ -131,6 +132,7 @@ def einkaufsliste(client_connection, verknuepfungsfeld)
     and liste.ARTNUM = artikel.ARTNUM
     and artikel.#{verknuepfungsfeld} IS NOT NULL
     and artikel.MENGE_AKT <= liste.MENGE
+    group by auftrag.REC_ID
    "
    
    return client_connection.query(query)
@@ -194,7 +196,7 @@ end
 def einkauf_postenliste(client_connection, einkauf)
   
   #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
-  query = "select * from EKBESTELL_POS where EKBESTELL_ID = #{einkauf[:EKBESTELL_ID]}
+  query = "select * from EKBESTELL_POS where EKBESTELL_ID = #{einkauf[:REC_ID]}
     and ARTIKELTYP!='F'
     "
 
@@ -383,7 +385,7 @@ def insert_posten_auftrag(client_connection, posten, neuer_auftrag)
 
 end
 
-def init_einkauf(client_connection, auftrag)
+def init_einkauf(client_connection, auftrag, vrenum)
 
   #Loesche leere Daten
   auftrag.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
@@ -467,6 +469,7 @@ def init_einkauf(client_connection, auftrag)
   auftrag[:TERMIN] = "CURDATE()"
   #auftrag[:RDATUM] = "NOW()"
   auftrag[:BEST_DATUM] = "CURDATE()"
+  auftrag[:ORGNUM] = vrenum
 
   insert_query ="insert into EKBESTELL
     (#{auftrag.keys.join(',')})
@@ -481,7 +484,7 @@ def init_einkauf(client_connection, auftrag)
 
 end
 
-def init_auftrag(client_connection, auftrag)
+def init_auftrag(client_connection, auftrag, vrenum)
 
   journal_felder = "
   TERM_ID           
@@ -595,6 +598,9 @@ def init_auftrag(client_connection, auftrag)
   auftrag[:LDATUM] = "CURDATE()"
   auftrag[:RDATUM] = "NOW()"
   auftrag[:BEST_DATUM] = "CURDATE()"
+  auftrag[:QUELLE]  ||= 8
+  auftrag[:VRENUM] = vrenum
+  
   #auftrag[:TERMIN] = "CURDATE()"
   
   #Loesche leere Daten
@@ -756,7 +762,7 @@ def process_einkauf(client)
 
     auftrags_id = auftrag[:REC_ID]
     
-    puts "Anzahl der zu bearbeitenden Posten im EK-Bestellung #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
+    puts "Anzahl der zu bearbeitenden Posten im EK-Bestellung #{auftrag[:ORGNUM]} : #{liste.count}" if DBConnection.flags.d?
 
     if liste.count > 0
       selbst_auftrag = exchange_kunde(default_kunde, auftrag)
@@ -764,11 +770,11 @@ def process_einkauf(client)
       #puts "selbst auftrag"
       #pp selbst_auftrag
 
-      init_auftrag(client, selbst_auftrag)
+      init_auftrag(client, selbst_auftrag, auftrag[:ORGNUM])
       
       neuer_auftrag = backup_last_journal(client)
       
-      init_einkauf(client, selbst_auftrag)
+      init_einkauf(client, selbst_auftrag, auftrag[:ORGNUM])
 
       neuer_einkauf = backup_last_journal(client)
 
@@ -782,7 +788,7 @@ def process_einkauf(client)
 
 	exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
 
-	insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
+	insert_posten_auftrag(client, zusammengesetzer_artikel, neuer_auftrag) if !zusammengesetzer_artikel[:USERFIELD_01].nil?
 	
 	sl = stueckliste(client, stuecklisten_artikel)
 	
@@ -834,6 +840,8 @@ def process_auftraege(client)
 
     auftrags_id = auftrag[:REC_ID]
     
+    vrenum = auftrag[:VRENUM]
+    
     puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrag[:VRENUM]} : #{liste.count}" if DBConnection.flags.d?
 
     selbst_auftrag = exchange_kunde(default_kunde, auftrag)
@@ -841,11 +849,11 @@ def process_auftraege(client)
     #puts "selbst auftrag"
     #pp selbst_auftrag
 
-    init_auftrag(client, selbst_auftrag)
+    init_auftrag(client, selbst_auftrag, auftrag[:VRENUM])
     
     neuer_auftrag = backup_last_journal(client)
     
-    init_einkauf(client, selbst_auftrag)
+    init_einkauf(client, selbst_auftrag, auftrag[:VRENUM])
 
     neuer_einkauf = backup_last_journal(client)
 
