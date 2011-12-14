@@ -145,14 +145,9 @@ def process_auftraege(client)
 
       sl = stueckliste(client, stuecklisten_artikel)
 
-      if sl
-        sl.each do |sl_posten|
-          insert_posten_auftrag(client, sl_posten, neuer_auftrag)
-          update_mengen(client, sl_posten)
-        end
-      else
-        insert_posten_auftrag(client, posten, neuer_auftrag)
-        update_mengen(client, posten)
+      sl.each do |sl_posten|
+        insert_posten_auftrag(client, sl_posten, neuer_auftrag)
+        update_mengen(client, sl_posten)
       end
 
 
