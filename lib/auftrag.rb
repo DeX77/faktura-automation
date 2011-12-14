@@ -25,7 +25,6 @@ module Auftrag
     where auftrag.REC_ID = liste.JOURNAL_ID
     and liste.ARTNUM = artikel.ARTNUM
     and artikel.#{verknuepfungsfeld} IS NOT NULL
-    and artikel.MENGE_AKT <= liste.MENGE
     and auftrag.QUELLE != 1
     group by auftrag.REC_ID
     ")
@@ -188,6 +187,7 @@ module Auftrag
   def insert_posten_auftrag(client_connection, posten, neuer_auftrag)
 
     journal_pos_fields = "
+    REC_ID
    QUELLE
    QUELLE_SUB
    QUELLE_SRC
@@ -243,6 +243,8 @@ module Auftrag
    APOS_FLAG
    "
 
+    posten[:BEZEICHNUNG] = posten[:LANGNAME]
+
     posten.delete_if { |key, value| !journal_pos_fields.include? key.to_s }
 
     #Loesche leere Daten
@@ -250,20 +252,8 @@ module Auftrag
 
     #Neuer Posten soll JOURNAL_ID von neuer Bestellung haben
     posten[:JOURNAL_ID] = neuer_auftrag
-
-    #Mengenanpassung
-    query = "select MENGE_AKT from ARTIKEL where ARTNUM =#{posten[:ARTNUM]}"
-
-    puts "query: #{query}" if DBConnection.flags.d?
-    #pp posten
-
-    vorhandene_menge = client_connection.query(query).first[:MENGE_AKT]
-
-    if vorhandene_menge < posten[:MENGE]
-      posten[:MENGE] -= vorhandene_menge
-    end
-
-    puts "posten[:MENGE]: #{posten[:MENGE]}" if DBConnection.flags.d?
+    posten[:ARTIKEL_ID]  = posten[:REC_ID]
+    posten.delete :REC_ID
 
     insert_query ="insert into JOURNALPOS
       (#{posten.keys.join(',')})

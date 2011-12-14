@@ -61,7 +61,9 @@ module Einkauf
 
     #Loesche leere Daten
     posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
-
+    
+    posten[:BEZEICHNUNG] = posten[:LANGNAME] if !posten[:LANGNAME].nil?
+    
     bestell_pos_fields = "
  PREISANFRAGE BELEGNUM ADDR_ID LIEF_ADDR_ID PROJEKT_ID REC_ID POSITION VIEW_POS WARENGRUPPE ARTIKELTYP MENGE
  ARTIKEL_ID MATCHCODE ARTNUM BARCODE LAENGE BREITE HOEHE GROESSE DIMENSION GEWICHT ME_EINHEIT PR_EINHEIT VPE
@@ -72,19 +74,7 @@ module Einkauf
     posten.delete_if { |key, value| !bestell_pos_fields.include? key.to_s }
 
     #Neuer Posten soll EKBESTELL_ID von neuer Bestellung haben
-    posten[:EKBESTELL_ID] = neuer_einkauf
-
-    #Mengenanpassung
-    query = "select MENGE_AKT from ARTIKEL where ARTNUM =#{posten[:ARTNUM]}"
-
-    puts "Mengenanpassung Query = #{query}" if DBConnection.flags.d?
-    #pp posten
-
-    vorhandene_menge = client_connection.query(query).first[:MENGE_AKT]
-
-    if vorhandene_menge < posten[:MENGE]
-      posten[:MENGE] -= vorhandene_menge
-    end
+    posten[:EKBESTELL_ID] = neuer_einkau
 
     puts "posten[:MENGE]: #{posten[:MENGE]}" if DBConnection.flags.d?
 

@@ -16,7 +16,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    
+
 require 'rubygems'
 require 'mysql2'
 require 'pp'
@@ -55,8 +55,6 @@ def value_join(array)
 end
 
 
-
-
 def backup_last_journal(client_connection)
 
   query = "select LAST_INSERT_ID()"
@@ -91,48 +89,129 @@ def init_db_connection(db)
 end
 
 
-  def process_auftraege(client)
+def process_auftraege(client)
 
-    #Oeffne Datei mit bereits bearbeiteten Auftraegen
-    save_file = File.new(DBConnection.flags.s, 'a+')
+  #Oeffne Datei mit bereits bearbeiteten Auftraegen
+  save_file = File.new(DBConnection.flags.s, 'a+')
 
-    bearbeitete_auftraege = save_file.read
+  bearbeitete_auftraege = save_file.read
 
-    #Datenbankanfrage nach zu bearbeitenden Auftraegen
-    auftraege = auftragsliste(client, DBConnection.flags.uf).to_a
+  #Datenbankanfrage nach zu bearbeitenden Auftraegen
+  auftraege = auftragsliste(client, DBConnection.flags.uf).to_a
 
 
-    puts "auftraege vorher: #{auftraege.count}"  if DBConnection.flags.d?
+  puts "auftraege vorher: #{auftraege.count}" if DBConnection.flags.d?
 
-    #Loesche bereits bearbeite raus
-    auftraege.delete_if { |auftrag|  bearbeitete_auftraege.include? auftrag[:REC_ID].to_s }
+  #Loesche bereits bearbeite raus
+  auftraege.delete_if { |auftrag| bearbeitete_auftraege.include? auftrag[:REC_ID].to_s }
 
-    puts "auftraege nachher: #{auftraege.count}"  if DBConnection.flags.d?
+  puts "auftraege nachher: #{auftraege.count}" if DBConnection.flags.d?
 
-    default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
+  default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
 
-    puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
+  puts "Anzahl zu bearbeitender Auftraege: #{auftraege.count}" if DBConnection.flags.d?
 
-    auftraege.each do |auftrag|
+  auftraege.each do |auftrag|
 
-      liste = auftrag_postenliste(client, auftrag)
+    liste = auftrag_postenliste(client, auftrag)
 
-      auftrags_id = auftrag[:REC_ID]
+    auftrags_id = auftrag[:REC_ID]
 
-      vrenum = auftrag[:VRENUM]
+    vrenum = auftrag[:VRENUM]
 
-      puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrags_id} : #{liste.count}" if DBConnection.flags.d?
+    puts "Anzahl der zu bearbeitenden Posten im Auftrag #{auftrags_id} : #{liste.count}" if DBConnection.flags.d?
 
+    selbst_auftrag = exchange_kunde(default_kunde, auftrag)
+
+    #puts "selbst auftrag"
+    #pp selbst_auftrag
+
+    init_auftrag(client, selbst_auftrag, auftrag[:VRENUM])
+
+    neuer_auftrag = backup_last_journal(client)
+
+    #init_einkauf(client, selbst_auftrag, auftrag[:VRENUM])
+
+    #neuer_einkauf = backup_last_journal(client)
+
+    liste.each do |posten|
+
+
+      zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
+
+      stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel, DBConnection.flags.uf)
+
+      #exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
+
+      sl = stueckliste(client, stuecklisten_artikel)
+
+      if sl
+        sl.each do |sl_posten|
+          insert_posten_auftrag(client, sl_posten, neuer_auftrag)
+          update_mengen(client, sl_posten)
+        end
+      else
+        insert_posten_auftrag(client, posten, neuer_auftrag)
+        update_mengen(client, posten)
+      end
+
+
+      #init_einkauf_stueckliste(client, sl, neuer_einkauf)
+
+
+    end
+
+    #Eventuelle Dateilinks mitkopieren
+    #copy_file_link(client, auftrags_id, neuer_einkauf)
+    copy_file_link(client, auftrags_id, neuer_auftrag)
+
+    #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
+
+    save_file.puts auftrags_id.to_s
+
+  end
+end
+
+
+def process_einkauf(client)
+  #Oeffne Datei mit bereits bearbeiteten Auftraegen
+  save_file = File.new(DBConnection.flags.s, 'a+')
+
+  bearbeitete_auftraege = save_file.read
+
+  #Datenbankanfrage nach zu bearbeitenden Auftraegen
+  auftraege = einkaufsliste(client, DBConnection.flags.uf).to_a
+
+  puts "EK-Bestellung vorher: #{auftraege.count}" if DBConnection.flags.d?
+
+  #Loesche bereits bearbeite raus
+  auftraege.delete_if { |auftrag| bearbeitete_auftraege.include? auftrag[:REC_ID].to_s }
+
+  puts "EK-Bestellung nachher: #{auftraege.count}" if DBConnection.flags.d?
+
+  default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
+
+  puts "Anzahl zu bearbeitender EK-Bestellung: #{auftraege.count}" if DBConnection.flags.d?
+
+  auftraege.each do |auftrag|
+
+    liste = einkauf_postenliste(client, auftrag)
+
+    auftrags_id = auftrag[:REC_ID]
+
+    puts "Anzahl der zu bearbeitenden Posten im EK-Bestellung #{auftrags_id} : #{liste.count}" if DBConnection.flags.d?
+
+    if liste.count > 0
       selbst_auftrag = exchange_kunde(default_kunde, auftrag)
 
       #puts "selbst auftrag"
       #pp selbst_auftrag
 
-      init_auftrag(client, selbst_auftrag, auftrag[:VRENUM])
+      init_auftrag(client, selbst_auftrag, auftrag[:ORGNUM])
 
       neuer_auftrag = backup_last_journal(client)
 
-      init_einkauf(client, selbst_auftrag, auftrag[:VRENUM])
+      init_einkauf(client, selbst_auftrag, auftrag[:ORGNUM])
 
       neuer_einkauf = backup_last_journal(client)
 
@@ -142,7 +221,6 @@ end
         zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
 
         stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel, DBConnection.flags.uf)
-
 
         exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
 
@@ -160,93 +238,21 @@ end
       copy_file_link(client, auftrags_id, neuer_auftrag)
 
       #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
-
-      save_file.puts auftrags_id.to_s
-
     end
+
+    save_file.puts auftrags_id.to_s
+
   end
-
-
-  def process_einkauf(client)
-    #Oeffne Datei mit bereits bearbeiteten Auftraegen
-    save_file = File.new(DBConnection.flags.s, 'a+')
-
-    bearbeitete_auftraege = save_file.read
-
-    #Datenbankanfrage nach zu bearbeitenden Auftraegen
-    auftraege = einkaufsliste(client, DBConnection.flags.uf).to_a
-
-    puts "EK-Bestellung vorher: #{auftraege.count}"   if DBConnection.flags.d?
-
-    #Loesche bereits bearbeite raus
-    auftraege.delete_if { |auftrag| bearbeitete_auftraege.include? auftrag[:REC_ID].to_s }
-
-    puts "EK-Bestellung nachher: #{auftraege.count}"   if DBConnection.flags.d?
-
-    default_kunde = get_art_kunde(client, DBConnection.flags.kn).first
-
-    puts "Anzahl zu bearbeitender EK-Bestellung: #{auftraege.count}" if DBConnection.flags.d?
-
-    auftraege.each do |auftrag|
-
-      liste = einkauf_postenliste(client, auftrag)
-
-      auftrags_id = auftrag[:REC_ID]
-
-      puts "Anzahl der zu bearbeitenden Posten im EK-Bestellung #{auftrags_id} : #{liste.count}" if DBConnection.flags.d?
-
-      if liste.count > 0
-        selbst_auftrag = exchange_kunde(default_kunde, auftrag)
-
-        #puts "selbst auftrag"
-        #pp selbst_auftrag
-
-        init_auftrag(client, selbst_auftrag, auftrag[:ORGNUM])
-
-        neuer_auftrag = backup_last_journal(client)
-
-        init_einkauf(client, selbst_auftrag, auftrag[:ORGNUM])
-
-        neuer_einkauf = backup_last_journal(client)
-
-        liste.each do |posten|
-
-
-          zusammengesetzer_artikel = zusammengesetzer_artikel(client, posten)
-
-          stuecklisten_artikel = stuecklisten_artikel(client, zusammengesetzer_artikel, DBConnection.flags.uf)
-
-          exchange_artikel = exchange_artikel(posten, stuecklisten_artikel)
-
-          insert_posten_auftrag(client, exchange_artikel, neuer_auftrag)
-
-          sl = stueckliste(client, stuecklisten_artikel)
-
-          init_einkauf_stueckliste(client, sl, neuer_einkauf)
-
-
-        end
-
-        #Eventuelle Dateilinks mitkopieren
-        #copy_file_link(client, auftrags_id, neuer_einkauf)
-        copy_file_link(client, auftrags_id, neuer_auftrag)
-
-        #Fuege Auftrag in die Liste der bearbeiteten Auftraege ein
-      end
-
-      save_file.puts auftrags_id.to_s
-
-    end
-  end
+end
 
 
 client = init_db_connection(DBConnection)
 
 process_auftraege(client)
 
-puts "------------------------------------------------------------------------------------------------"   if DBConnection.flags.d?
+puts "------------------------------------------------------------------------------------------------" if DBConnection.flags.d?
 
-process_einkauf(client)
+#process_einkauf(client)
 
 
 

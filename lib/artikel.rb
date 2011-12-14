@@ -120,4 +120,20 @@ module Artikel
     return out
   end
 
+  def update_mengen(client_connection, artikel)
+
+    insert_query = "
+    insert into ARTIKEL_BDATEN
+    (ARTIKEL_ID, QUELLE, JAHR, MONAT, SUM_MENGE)
+    VALUES((select REC_ID from ARTIKEL where ARTNUM = #{artikel[:ARTNUM]}),
+    28, 0, 0, #{artikel[:MENGE]})
+    ON DUPLICATE KEY UPDATE SUM_MENGE=SUM_MENGE+#{artikel[:MENGE]}
+    "
+
+    puts "insert_query: #{insert_query}" if DBConnection.flags.d?
+
+    return client_connection.query(insert_query) unless DBConnection.flags.dr?
+
+  end
+
 end
