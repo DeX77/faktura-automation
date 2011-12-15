@@ -19,15 +19,16 @@ module Artikel
 
   def zusammengesetzer_artikel(client_connection, listen_artikel)
     query =
-        "select * from ARTIKEL
-  where ARTNUM = #{listen_artikel[:ARTNUM]}
+        "select art.*,me.BEZEICHNUNG as ME_EINHEIT
+        from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
+        where ARTNUM = #{listen_artikel[:ARTNUM]}
         "
     puts "zusammengesetzer_artikel:"+query if DBConnection.flags.d?
 
     zusammengesetzer_artikel = client_connection.query(query)
     zusammengesetzer_artikel.first[:MENGE] = listen_artikel[:MENGE]
 
-    puts "zusammengesetzer_artikel.first[:MENGE] = #{zusammengesetzer_artikel.first[:MENGE]}"  if DBConnection.flags.d?
+    puts "zusammengesetzer_artikel.first[:MENGE] = #{zusammengesetzer_artikel.first[:MENGE]}" if DBConnection.flags.d?
 
     return zusammengesetzer_artikel.first
   end
@@ -38,7 +39,8 @@ module Artikel
       return zusammengesetzer_artikel
     else
       query =
-          "select * from ARTIKEL
+          "select art.*,me.BEZEICHNUNG as ME_EINHEIT
+      from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
       where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}
           "
 
@@ -49,7 +51,7 @@ module Artikel
       #Menge mitschleifen!
       stuecklisten_artikel.first[:MENGE] = zusammengesetzer_artikel[:MENGE]
 
-      puts "stuecklisten_artikel.first[:MENGE]: = #{stuecklisten_artikel.first[:MENGE]}"  if DBConnection.flags.d?
+      puts "stuecklisten_artikel.first[:MENGE]: = #{stuecklisten_artikel.first[:MENGE]}" if DBConnection.flags.d?
 
       return stuecklisten_artikel.first
 
@@ -102,18 +104,18 @@ module Artikel
   AND ARTIKEL_ART= 'STL'
   "
 
-    puts "stuecklisten query = #{query}"  if DBConnection.flags.d?
+    puts "stuecklisten query = #{query}" if DBConnection.flags.d?
 
     articles = client_connection.query(query)
 
     articles.each do |art|
-      query = "select * from ARTIKEL where REC_ID = #{art[:ART_ID]}"
+      query = "
+        select art.*,me.BEZEICHNUNG as ME_EINHEIT
+        from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
+        where art.REC_ID = #{art[:ART_ID]}"
 
       blah = client_connection.query(query).first
       blah[:MENGE] = artikel[:MENGE] * art[:MENGE]
-      #puts "stueckliste blah"
-      #pp blah
-      puts "stueckliste blah[:MENGE] = #{blah[:MENGE]}"   if DBConnection.flags.d?
       out << blah
     end
 
