@@ -134,6 +134,8 @@ def process_auftraege(client)
 
     #neuer_einkauf = backup_last_journal(client)
 
+    position = 0
+
     liste.each do |posten|
 
 
@@ -146,8 +148,9 @@ def process_auftraege(client)
       sl = stueckliste(client, stuecklisten_artikel)
 
       sl.each do |sl_posten|
-        insert_posten_auftrag(client, sl_posten, neuer_auftrag)
+        insert_posten_auftrag(client, sl_posten, neuer_auftrag, position)
         update_mengen(client, sl_posten)
+        position +=1
       end
 
 
