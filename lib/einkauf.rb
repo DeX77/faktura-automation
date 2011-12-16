@@ -29,7 +29,7 @@ module Einkauf
     group by auftrag.REC_ID
    "
 
-    puts "Einkaufsliste: #{query}"   if DBConnection.flags.d?
+    puts "Einkaufsliste: #{query}" if DBConnection.flags.d?
 
     return client_connection.query(query)
 
@@ -61,9 +61,9 @@ module Einkauf
 
     #Loesche leere Daten
     posten.delete_if { |key, value| (value.nil? || value.to_s.empty? || (value == -1) || (value == 0.0)) }
-    
+
     posten[:BEZEICHNUNG] = posten[:LANGNAME] if !posten[:LANGNAME].nil?
-    
+
     bestell_pos_fields = "
  PREISANFRAGE BELEGNUM ADDR_ID LIEF_ADDR_ID PROJEKT_ID REC_ID POSITION VIEW_POS WARENGRUPPE ARTIKELTYP MENGE
  ARTIKEL_ID MATCHCODE ARTNUM BARCODE LAENGE BREITE HOEHE GROESSE DIMENSION GEWICHT ME_EINHEIT PR_EINHEIT VPE
@@ -170,10 +170,10 @@ module Einkauf
     auftrag.delete_if { |key, value| !ekbestell_fields.include? key.to_s }
 
     #auftrag[:ADATUM] = "CURDATE()"
-    auftrag[:TERMIN] = "CURDATE()"
+    auftrag[:TERMIN]     = "CURDATE()"
     #auftrag[:RDATUM] = "NOW()"
     auftrag[:BEST_DATUM] = "CURDATE()"
-    auftrag[:ORGNUM] = vrenum
+    auftrag[:ORGNUM]     = vrenum
 
     insert_query ="insert into EKBESTELL
     (#{auftrag.keys.join(',')})

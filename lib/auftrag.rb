@@ -19,13 +19,15 @@ module Auftrag
   def auftragsliste(client_connection, verknuepfungsfeld)
 
     auftraege = client_connection.query(
-        "select auftrag.* from JOURNAL as auftrag,
-    JOURNALPOS as liste,
-    ARTIKEL as artikel
-    where auftrag.REC_ID = liste.JOURNAL_ID
-    and liste.ARTNUM = artikel.ARTNUM
-    and artikel.#{verknuepfungsfeld} IS NOT NULL
+        "select auftrag.* from JOURNAL as auftrag
+    join
+    JOURNALPOS as liste on auftrag.REC_ID = liste.JOURNAL_ID
+    join
+    ARTIKEL as artikel on liste.ARTNUM = artikel.ARTNUM
+    where auftrag.REC_ID NOT IN
+    (SELECT REC_ID from JOURNAL_DONE)
     and auftrag.QUELLE != 1
+    and artikel.#{verknuepfungsfeld} IS NOT NULL
     group by auftrag.REC_ID
     ")
 
@@ -37,7 +39,7 @@ module Auftrag
 
     #Herraussuchen der entsprechenden Artikel aus JOURNALPOS
     query = "select * from JOURNALPOS where JOURNAL_ID = #{auftrag[:REC_ID]}
-    and ARTIKELTYP!='F'
+    and (ARTIKELTYP = 'N' or ARTIKELTYP = 'S')
     "
 
     puts query if DBConnection.flags.d?
@@ -50,6 +52,14 @@ module Auftrag
 
   end
 
+  def insert_auftrag_done(client_connection, auftrags_id)
+    insert_query =
+        "insert into JOURNAL_DONE (REC_ID)
+    VALUES(#{auftrags_id})
+    "
+
+    return client_connection.query(insert_query) unless DBConnection.flags.dr?
+  end
 
   def init_auftrag(client_connection, auftrag, vrenum)
 
@@ -161,12 +171,12 @@ module Auftrag
 
 
     #Datum
-    auftrag[:ADATUM] = "CURDATE()"
-    auftrag[:LDATUM] = "CURDATE()"
-    auftrag[:RDATUM] = "NOW()"
+    auftrag[:ADATUM]     = "CURDATE()"
+    auftrag[:LDATUM]     = "CURDATE()"
+    auftrag[:RDATUM]     = "NOW()"
     auftrag[:BEST_DATUM] = "CURDATE()"
-    auftrag[:QUELLE] ||= 8
-    auftrag[:VRENUM] = vrenum
+    auftrag[:QUELLE]     ||= 8
+    auftrag[:VRENUM]     = vrenum
 
     #auftrag[:TERMIN] = "CURDATE()"
 
@@ -184,7 +194,7 @@ module Auftrag
 
   end
 
-  def insert_posten_auftrag(client_connection, posten, neuer_auftrag)
+  def insert_posten_auftrag(client_connection, posten, neuer_auftrag, position)
 
     journal_pos_fields = "
     REC_ID
@@ -244,6 +254,7 @@ module Auftrag
    "
 
     posten[:BEZEICHNUNG] = posten[:LANGNAME]
+    posten[:POSITION]    = position
 
     posten.delete_if { |key, value| !journal_pos_fields.include? key.to_s }
 
@@ -252,7 +263,7 @@ module Auftrag
 
     #Neuer Posten soll JOURNAL_ID von neuer Bestellung haben
     posten[:JOURNAL_ID] = neuer_auftrag
-    posten[:ARTIKEL_ID]  = posten[:REC_ID]
+    posten[:ARTIKEL_ID] = posten[:REC_ID]
     posten.delete :REC_ID
 
     insert_query ="insert into JOURNALPOS
@@ -264,8 +275,6 @@ module Auftrag
     return client_connection.query(insert_query) unless DBConnection.flags.dr?
 
   end
-
-
 
 
 end

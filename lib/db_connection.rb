@@ -31,11 +31,6 @@ module DBConnection
     value_matches ["KundenNr must be a number", /^\d+$/]
   end
 
-  flag "s" do
-    description "File for processed Orders"
-    long_form "savefile"
-  end
-
   optional_flag "H" do
     description "Hostname for database connection. Defaults to localhost"
     default "localhost"

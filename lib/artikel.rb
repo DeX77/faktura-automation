@@ -21,11 +21,11 @@ module Artikel
     query =
         "select art.*,me.BEZEICHNUNG as ME_EINHEIT
         from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
-        where ARTNUM = #{listen_artikel[:ARTNUM]}
+        where ARTNUM = \"#{listen_artikel[:ARTNUM]}\"
         "
     puts "zusammengesetzer_artikel:"+query if DBConnection.flags.d?
 
-    zusammengesetzer_artikel = client_connection.query(query)
+    zusammengesetzer_artikel               = client_connection.query(query)
     zusammengesetzer_artikel.first[:MENGE] = listen_artikel[:MENGE]
 
     puts "zusammengesetzer_artikel.first[:MENGE] = #{zusammengesetzer_artikel.first[:MENGE]}" if DBConnection.flags.d?
@@ -41,12 +41,12 @@ module Artikel
       query =
           "select art.*,me.BEZEICHNUNG as ME_EINHEIT
       from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
-      where ARTNUM = #{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}
+      where ARTNUM = \"#{zusammengesetzer_artikel[verknuepfungsfeld.to_sym]}\"
           "
 
       puts "stueckliste: "+query if DBConnection.flags.d?
 
-      stuecklisten_artikel = client_connection.query(query)
+      stuecklisten_artikel               = client_connection.query(query)
 
       #Menge mitschleifen!
       stuecklisten_artikel.first[:MENGE] = zusammengesetzer_artikel[:MENGE]
@@ -83,7 +83,7 @@ module Artikel
     end
 
     #Aendere die ARTIKEL_ID
-    listen_artikel[:ARTIKEL_ID] = stuecklisten_artikel[:REC_ID]
+    listen_artikel[:ARTIKEL_ID]  = stuecklisten_artikel[:REC_ID]
 
     #Aendere die Beschreibung
     listen_artikel[:BEZEICHNUNG] = stuecklisten_artikel[:LANGNAME]
@@ -100,7 +100,7 @@ module Artikel
     query = "
   select * from ARTIKEL_STUECKLIST
   where REC_ID =
-  (select REC_ID from ARTIKEL where ARTNUM=#{artikel[:ARTNUM]})
+  (select REC_ID from ARTIKEL where ARTNUM= \"#{artikel[:ARTNUM]}\")
   AND ARTIKEL_ART= 'STL'
   "
 
@@ -114,7 +114,7 @@ module Artikel
         from ARTIKEL as art join MENGENEINHEIT as me on art.ME_ID = me.REC_ID
         where art.REC_ID = #{art[:ART_ID]}"
 
-      blah = client_connection.query(query).first
+      blah         = client_connection.query(query).first
       blah[:MENGE] = artikel[:MENGE] * art[:MENGE]
       out << blah
     end
@@ -127,7 +127,7 @@ module Artikel
     insert_query = "
     insert into ARTIKEL_BDATEN
     (ARTIKEL_ID, QUELLE, JAHR, MONAT, SUM_MENGE)
-    VALUES((select REC_ID from ARTIKEL where ARTNUM = #{artikel[:ARTNUM]}),
+    VALUES((select REC_ID from ARTIKEL where ARTNUM = \"#{artikel[:ARTNUM]}\"),
     28, 0, 0, #{artikel[:MENGE]})
     ON DUPLICATE KEY UPDATE SUM_MENGE=SUM_MENGE+#{artikel[:MENGE]}
     "

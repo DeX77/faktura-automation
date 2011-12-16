@@ -32,16 +32,16 @@ module Kunde
   def exchange_kunde(kunde, journal_eintrag)
 
     kundenfelder = {
-        :KUN_NUM => :KUNNUM1,
-        :KUN_ANREDE => :ANREDE,
-        :KUN_NAME1 => :NAME1,
-        :KUN_NAME2 => :NAME2,
-        :KUN_NAME3 => :NAME3,
+        :KUN_NUM       => :KUNNUM1,
+        :KUN_ANREDE    => :ANREDE,
+        :KUN_NAME1     => :NAME1,
+        :KUN_NAME2     => :NAME2,
+        :KUN_NAME3     => :NAME3,
         :KUN_ABTEILUNG => :ABTEILUNG,
-        :KUN_STRASSE => :STRASSE,
-        :KUN_LAND => :LAND,
-        :KUN_PLZ => :PLZ,
-        :KUN_ORT => :ORT
+        :KUN_STRASSE   => :STRASSE,
+        :KUN_LAND      => :LAND,
+        :KUN_PLZ       => :PLZ,
+        :KUN_ORT       => :ORT
     }
 
     kundenfelder.each do |feld_journal, feld_adresse|

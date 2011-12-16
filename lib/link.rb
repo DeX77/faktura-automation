@@ -20,13 +20,13 @@ module Link
   def copy_file_link(client_connection, journal_item_from, journal_item_to)
 
     insert_query =
-   "insert into LINK (MODUL_ID,PFAD,DATEI,BEMERKUNG,LAST_CHANGE,LAST_CHANGE_USER,OPEN_FLAG,OPEN_USER,OPEN_TIME,REC_ID)
+        "insert into LINK (MODUL_ID,PFAD,DATEI,BEMERKUNG,LAST_CHANGE,LAST_CHANGE_USER,OPEN_FLAG,OPEN_USER,OPEN_TIME,REC_ID)
    select MODUL_ID,PFAD,DATEI,BEMERKUNG,LAST_CHANGE,LAST_CHANGE_USER,OPEN_FLAG,OPEN_USER,OPEN_TIME, #{journal_item_to}
    from LINK
    where REC_ID=#{journal_item_from}
-   "
+        "
 
-   return client_connection.query(insert_query) unless DBConnection.flags.dr?
+    return client_connection.query(insert_query) unless DBConnection.flags.dr?
 
   end
 
