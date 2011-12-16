@@ -79,7 +79,8 @@ def init_db_connection(db)
       :host     => db.flags.H,
       :username => db.flags.u,
       :database => db.flags.db,
-      :password => db.flags.p
+      :password => db.flags.p,
+      :socket =>   db.flags.s
   )
 
 #Symbolize keys

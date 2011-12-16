@@ -65,6 +65,11 @@ module DBConnection
     long_form "debug"
   end
 
+  optional_flag "s" do
+    description "Socket for mysql connection."
+    long_form "socket"
+  end
+
   usage_flag "h", "help", "?"
 
   and_process!
